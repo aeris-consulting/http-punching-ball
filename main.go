@@ -58,8 +58,9 @@ var rootCmd = &cobra.Command{
 	Use:   "http-punching-ball",
 	Short: "HTTP Punching Ball is a dummy server that just echoes the received requests as binary",
 	Long: `HTTP Punching Ball is a lightweight service developed by AERIS-Consulting e.U., in order to to test HTTP clients.
-The endpoint / only supports GET, POST and PUT and returns the received payload binary wrapped into a JSON body.
+The endpoint / supports all the methods and returns the received payload binary wrapped into a JSON body.
 The endpoint /stats provides statistics about the received requests, which can be reset with a DELETE request to the same endpoint.
+All the other endpoints returns a complete description of the request as JSON.
 `,
 
 	Run: func(cmd *cobra.Command, args []string) {
@@ -134,12 +135,11 @@ The endpoint /stats provides statistics about the received requests, which can b
 func setupRouter() *gin.Engine {
 	r := gin.Default()
 
-	r.GET("/", handlers.Home)
-	r.POST("/", handlers.Home)
-	r.PUT("/", handlers.Home)
-
+	r.Any("/", handlers.Home)
 	r.GET("/stats", handlers.RequestsStats)
 	r.DELETE("/stats", handlers.ResetStats)
+
+	r.NoRoute(handlers.Describe)
 
 	return r
 }
