@@ -59,9 +59,10 @@ var rootCmd = &cobra.Command{
 	Short: "HTTP Punching Ball is a dummy server that just echoes the received requests as binary",
 	Long: `HTTP Punching Ball is a lightweight service developed by AERIS-Consulting e.U., in order to to test HTTP clients.
 The endpoint / supports all the methods and returns the received payload binary wrapped into a JSON body.
-The endpoint /stats provides statistics about the received requests, which can be reset with a DELETE request to the same endpoint.
+The endpoint /_stats provides statistics about the received requests, which can be reset with a DELETE request to the same endpoint.
 All the other endpoints returns a complete description of the request as JSON.
 `,
+	Version: "0.1.0",
 
 	Run: func(cmd *cobra.Command, args []string) {
 		if *configuration.debug {
@@ -83,7 +84,7 @@ All the other endpoints returns a complete description of the request as JSON.
 		// Starts the plain HTTP server.
 		go func() {
 			if *configuration.enablePlain {
-				log.Printf("Starting QALIPSIS listening %s for HTTP", plainServer.Addr)
+				log.Printf("Starting HTTP Punching Ball, listening on %s for HTTP", plainServer.Addr)
 
 				if err := plainServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 					log.Fatalf("HTTP server start failed: %s\n", err)
@@ -94,7 +95,7 @@ All the other endpoints returns a complete description of the request as JSON.
 		// Starts the HTTPS server.
 		go func() {
 			if *configuration.enableSsl {
-				log.Printf("Starting QALIPSIS listening %s for HTTPS", tlsServer.Addr)
+				log.Printf("Starting HTTP Punching Ball, listening on %s for HTTPS", tlsServer.Addr)
 
 				if err := tlsServer.ListenAndServeTLS(*configuration.sslCert, *configuration.sslKey); err != nil && err != http.ErrServerClosed {
 					log.Fatalf("HTTPS server start failed: %s\n", err)
@@ -136,8 +137,8 @@ func setupRouter() *gin.Engine {
 	r := gin.Default()
 
 	r.Any("/", handlers.Home)
-	r.GET("/stats", handlers.RequestsStats)
-	r.DELETE("/stats", handlers.ResetStats)
+	r.GET("/_stats", handlers.RequestsStats)
+	r.DELETE("/_stats", handlers.ResetStats)
 
 	r.NoRoute(handlers.Describe)
 

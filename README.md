@@ -29,7 +29,7 @@ To pull and see the configuration options, run the following:
 
 HTTP Punching Ball is a lightweight service developed by AERIS-Consulting e.U., in order to to test HTTP clients.
 The endpoint / only supports GET, POST and PUT and returns the received payload binary wrapped into a JSON body.
-The endpoint /stats provides statistics about the received requests, which can be reset with a DELETE request to the same endpoint.
+The endpoint /_stats provides statistics about the received requests, which can be reset with a DELETE request to the same endpoint.
 
 Usage:
   http-punching-ball [flags]

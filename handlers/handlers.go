@@ -24,9 +24,11 @@ import (
 
 type stats struct {
 	Count           uint64 `json:"count"`
-	PayloadBytes    uint64 `json:"payloadBytes"`
+	ReceivedBytes   uint64 `json:"receivedBytes"`
 	EarliestEpochMs int64  `json:"earliestEpochMs"`
 	LatestEpochMs   int64  `json:"latestEpochMs"`
+	DurationMs      uint64 `json:"durationMs"`
+	CountPerSeconds uint64 `json:"countPerSeconds"`
 }
 
 type fileMetadata struct {
@@ -62,7 +64,7 @@ func Home(ctx *gin.Context) {
 	requestsStats.LatestEpochMs = now
 
 	message, err := ctx.GetRawData()
-	atomic.AddUint64(&requestsStats.PayloadBytes, uint64(len(message)))
+	atomic.AddUint64(&requestsStats.ReceivedBytes, uint64(len(message)))
 
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -73,6 +75,10 @@ func Home(ctx *gin.Context) {
 
 // RequestsStats returns the statistics of requests.
 func RequestsStats(ctx *gin.Context) {
+	if requestsStats.LatestEpochMs > 0 {
+		requestsStats.DurationMs = uint64(requestsStats.LatestEpochMs - requestsStats.EarliestEpochMs)
+		requestsStats.CountPerSeconds = requestsStats.Count / (requestsStats.DurationMs / 1000)
+	}
 	ctx.JSON(http.StatusOK, requestsStats)
 }
 
