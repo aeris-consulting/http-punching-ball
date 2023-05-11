@@ -18,17 +18,19 @@ import (
 	"github.com/gin-gonic/gin"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
 
 type stats struct {
-	Count           uint64 `json:"count"`
+	RequestsCount   uint64 `json:"requestsCount"`
 	ReceivedBytes   uint64 `json:"receivedBytes"`
 	EarliestEpochMs int64  `json:"earliestEpochMs"`
 	LatestEpochMs   int64  `json:"latestEpochMs"`
 	DurationMs      uint64 `json:"durationMs"`
 	CountPerSeconds uint64 `json:"countPerSeconds"`
+	ClientsCount    int    `json:"clientsCount"`
 }
 
 type fileMetadata struct {
@@ -54,14 +56,21 @@ type metadata struct {
 	Form       map[string][]string       `json:"form"`
 }
 
+var remoteAddresses = make(map[string]struct{})
+var empty struct{}
+var remoteAddressesWriteMutex = sync.RWMutex{}
 var requestsStats = stats{}
 
 // Home returns the payload as response.
 func Home(ctx *gin.Context) {
 	now := time.Now().UnixMilli()
 	atomic.CompareAndSwapInt64(&requestsStats.EarliestEpochMs, 0, now)
-	atomic.AddUint64(&requestsStats.Count, 1)
+	atomic.AddUint64(&requestsStats.RequestsCount, 1)
 	requestsStats.LatestEpochMs = now
+	// Records the remote address as a unique connection.
+	remoteAddressesWriteMutex.Lock()
+	remoteAddresses[ctx.Request.RemoteAddr] = empty
+	remoteAddressesWriteMutex.Unlock()
 
 	message, err := ctx.GetRawData()
 	atomic.AddUint64(&requestsStats.ReceivedBytes, uint64(len(message)))
@@ -75,9 +84,12 @@ func Home(ctx *gin.Context) {
 
 // RequestsStats returns the statistics of requests.
 func RequestsStats(ctx *gin.Context) {
+	requestsStats.ClientsCount = len(remoteAddresses)
 	if requestsStats.LatestEpochMs > 0 {
 		requestsStats.DurationMs = uint64(requestsStats.LatestEpochMs - requestsStats.EarliestEpochMs)
-		requestsStats.CountPerSeconds = requestsStats.Count / (requestsStats.DurationMs / 1000)
+		if requestsStats.DurationMs > 0 {
+			requestsStats.CountPerSeconds = requestsStats.RequestsCount / (requestsStats.DurationMs / 1000)
+		}
 	}
 	ctx.JSON(http.StatusOK, requestsStats)
 }
@@ -85,6 +97,7 @@ func RequestsStats(ctx *gin.Context) {
 // ResetStats resets the statistics of requests.
 func ResetStats(ctx *gin.Context) {
 	requestsStats = stats{}
+	remoteAddresses = make(map[string]struct{})
 	ctx.JSON(http.StatusOK, requestsStats)
 }
 
