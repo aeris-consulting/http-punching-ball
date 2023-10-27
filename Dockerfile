@@ -13,7 +13,7 @@
 #   limitations under the License.
 
 # Builder: go-builder
-FROM golang:stretch as go-builder
+FROM golang as go-builder
 
 ENV GOPROXY=https://proxy.golang.org
 
@@ -24,7 +24,7 @@ RUN go build -v ./...
 RUN go install -v ./...
 
 # Final image
-FROM debian:stretch
+FROM debian
 RUN apt -y update && apt -y upgrade && \
     apt install -y net-tools bash
 
