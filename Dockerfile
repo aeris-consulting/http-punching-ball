@@ -13,18 +13,24 @@
 #   limitations under the License.
 
 # Builder: go-builder
-FROM golang as go-builder
+ARG GO_VERSION=1.21
+FROM --platform=${BUILDPLATFORM:-linux/amd64} golang:${GO_VERSION}-alpine as go-builder
+
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
+ARG TARGETOS
+ARG TARGETARCH
 
 ENV GOPROXY=https://proxy.golang.org
 
-WORKDIR /go/src/http-punching-ball
-COPY . .
+WORKDIR /app/
+ADD . .
 RUN go get -v -t -d ./...
-RUN go build -v ./...
-RUN go install -v ./...
+RUN GO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-w -s" -o /bin -v ./...
 
 # Final image
 FROM debian
+
 RUN apt -y update && apt -y upgrade && \
     apt install -y net-tools bash
 
@@ -33,8 +39,12 @@ ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /usr/
 RUN chmod +x /usr/local/bin/tini
 
 WORKDIR /http-punching-ball
-COPY --from=go-builder /go/bin/http-punching-ball .
-COPY http-server.* .
+COPY --from=go-builder /bin/http-punching-ball /http-punching-ball/http-punching-ball
+ADD http-server.* .
+
+RUN useradd -ms /bin/bash http-punching-ball
+RUN chown -R http-punching-ball:root /http-punching-ball && \
+    chmod -R 770 /http-punching-ball
 
 COPY entrypoint.sh /usr/local/bin
 RUN chmod +x /usr/local/bin/entrypoint.sh
@@ -44,3 +54,5 @@ ENTRYPOINT ["/usr/local/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 
 EXPOSE 8080
 EXPOSE 8433
+
+USER http-punching-ball
