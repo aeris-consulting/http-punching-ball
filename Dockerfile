@@ -14,22 +14,17 @@
 
 # Builder: go-builder
 ARG GO_VERSION=1.21
-FROM --platform=${BUILDPLATFORM:-linux/amd64} golang:${GO_VERSION}-alpine as go-builder
-
-ARG TARGETPLATFORM
-ARG BUILDPLATFORM
-ARG TARGETOS
-ARG TARGETARCH
+FROM --platform=${TARGETPLATFORM:-linux/amd64} golang:${GO_VERSION} as go-builder
 
 ENV GOPROXY=https://proxy.golang.org
 
 WORKDIR /app/
 ADD . .
 RUN go get -v -t -d ./...
-RUN GO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-w -s" -o /bin -v ./...
+RUN GO_ENABLED=0 go build -ldflags="-w -s" -o /bin -v ./...
 
 # Final image
-FROM debian
+FROM --platform=${TARGETPLATFORM:-linux/amd64} debian
 
 RUN apt -y update && apt -y upgrade && \
     apt install -y net-tools bash

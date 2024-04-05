@@ -87,9 +87,8 @@ func RequestsStats(ctx *gin.Context) {
 	requestsStats.ClientsCount = len(remoteAddresses)
 	if requestsStats.LatestEpochMs > 0 {
 		requestsStats.DurationMs = uint64(requestsStats.LatestEpochMs - requestsStats.EarliestEpochMs)
-		if requestsStats.DurationMs > 0 {
-			requestsStats.CountPerSeconds = requestsStats.RequestsCount / (requestsStats.DurationMs / 1000)
-		}
+		requestsDuration := max(1, requestsStats.DurationMs/1000)
+		requestsStats.CountPerSeconds = requestsStats.RequestsCount / requestsDuration
 	}
 	ctx.JSON(http.StatusOK, requestsStats)
 }
