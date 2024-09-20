@@ -159,5 +159,13 @@ func Describe(ctx *gin.Context) {
 		requestMetadata.Data = string(data)
 	}
 
+	if len(request.PostForm) > 0 && requestMetadata.Form == nil {
+		requestMetadata.Form = map[string][]string{}
+	}
+	for urlValue := range request.PostForm {
+		values, _ := ctx.GetPostFormArray(urlValue)
+		requestMetadata.Form[urlValue] = values
+	}
+
 	ctx.JSON(http.StatusOK, requestMetadata)
 }
