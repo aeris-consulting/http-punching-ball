@@ -1,48 +1,82 @@
 # HTTP Punching Ball
 
-Lightweight HTTP server for testing of HTTP clients. This service supports both HTTP and HTTPS.
-
-Execute with the flag `-h` to list the configuration options.
+Lightweight HTTP server for testing of HTTP clients and as a neutral target for load tests. This service supports
+both HTTP and HTTPS.
 
 The source code is distributed under the [Apache License Version 2.0](./LICENSE).
 
-## Install the service locally
+## Endpoints
+
+| Endpoint         | Description                                                                                          |
+|------------------|------------------------------------------------------------------------------------------------------|
+| `/` (any method) | Returns `202 Accepted` with the received payload as base64 in a JSON body: `{"binary":"..."}`.      |
+| `GET /_stats`    | Statistics of the requests received on `/` since the start or the last reset (see below).           |
+| `DELETE /_stats` | Resets the statistics.                                                                               |
+| any other URI    | Returns a JSON description of the received request (URI, headers, cookies, parameters, form, body). |
+
+The statistics contain `requestsCount`, `receivedBytes`, `earliestEpochMs`, `latestEpochMs`, `durationMs`,
+`countPerSeconds` and `clientsCount`, the count of distinct connections that sent at least one request to `/`.
+They are lock-free and nothing is logged per request (unless `--debug`), so that the server remains a cheap target.
+
+## Build and run locally
+
+Requires the Go version declared in `go.mod` or later.
 
 ```
-go get -v -t -d ./...
-go build -v ./...
-go install -v ./...
+go vet ./...
+go test -race ./...
+go build -ldflags "-X main.version=$(cat VERSION)" -o http-punching-ball .
+./http-punching-ball --plain-port 8080
 ```
 
-## Build the docker image
+## Flags
 
 ```
-docker build . -t aerisconsulting/http-punching-ball && docker push aerisconsulting/http-punching-ball
+      --debug         enables the debug mode, logging every request
+  -h, --help          help for http-punching-ball
+      --http          enables the plain HTTP server (default true)
+      --https         enables the HTTPS server
+      --plain-port    port for plain HTTP (default 8080)
+      --ssl-cert      certificate file for the server (default "http-server.crt")
+      --ssl-key       key file for the server certificate (default "http-server.key")
+      --ssl-port      port for HTTPS (default 8443)
+  -v, --version       version for http-punching-ball
 ```
 
-## Use from docker
+The command `http-punching-ball health [--plain-port <port>]` exits with 0 when the local plain HTTP server answers
+on `/_stats`. It is the health check of the Docker image.
 
-To pull and see the configuration options, run the following:
+## Build the Docker image
 
-```
-> docker pull aerisconsulting/http-punching-ball && docker run -it --rm aerisconsulting/http-punching-ball -h
+The image is based on distroless static and runs as non-root. The Go binary is cross-compiled natively on the build
+platform, so no emulation is needed, even for foreign architectures.
 
-HTTP Punching Ball is a lightweight service developed by AERIS-Consulting e.U., in order to to test HTTP clients.
-The endpoint / only supports GET, POST and PUT and returns the received payload binary wrapped into a JSON body.
-The endpoint /_stats provides statistics about the received requests, which can be reset with a DELETE request to the same endpoint.
-Send a request to any other URI of your choice to receive a description of your query as a JSON payload.
-
-Usage:
-  http-punching-ball [flags]
-
-Flags:
-      --debug             enables the debug mode with more verbosity
-  -h, --help              help for http-punching-ball
-      --http              enables the plain HTTP server (default true)
-      --https             enables the HTTPS server
-      --plain-port int    port for plain HTTP (default 8080)
-      --ssl-cert string   certificate file for the server
-      --ssl-key string    key file for the server certificate
-      --ssl-port int      port for HTTPS (default 8443)
+Image for the local platform:
 
 ```
+docker buildx build --load -t aerisconsulting/http-punching-ball:local .
+```
+
+Multi-architecture image (pushed to a registry, since `--load` only supports a single platform with the classic
+image store):
+
+```
+docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 \
+  -t aerisconsulting/http-punching-ball:$(cat VERSION) --push .
+```
+
+The version is read from the file `VERSION`, unless provided with `--build-arg VERSION=...`.
+
+The CI (`.github/workflows/build.yml`) runs the tests, cross-compiles the binaries for Linux, macOS and Windows
+(amd64 and arm64), and on each push to `main` publishes the multi-architecture image with the tags `latest` and
+the version.
+
+## Use from Docker
+
+```
+docker run -d --rm -p 8080:8080 aerisconsulting/http-punching-ball
+docker run -d --rm -p 8443:8443 aerisconsulting/http-punching-ball --https --http=false
+docker run --rm aerisconsulting/http-punching-ball --help
+```
+
+The certificate `http-server.crt` and its key `http-server.key` are self-signed and only meant for tests.

@@ -1,0 +1,7 @@
+.git
+.github
+.idea
+*.md
+Dockerfile
+.dockerignore
+http-punching-ball-*

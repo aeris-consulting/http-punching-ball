@@ -15,23 +15,13 @@
 package handlers
 
 import (
-	"github.com/gin-gonic/gin"
+	"io"
 	"net/http"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
-)
 
-type stats struct {
-	RequestsCount   uint64 `json:"requestsCount"`
-	ReceivedBytes   uint64 `json:"receivedBytes"`
-	EarliestEpochMs int64  `json:"earliestEpochMs"`
-	LatestEpochMs   int64  `json:"latestEpochMs"`
-	DurationMs      uint64 `json:"durationMs"`
-	CountPerSeconds uint64 `json:"countPerSeconds"`
-	ClientsCount    int    `json:"clientsCount"`
-}
+	"github.com/gin-gonic/gin"
+)
 
 type fileMetadata struct {
 	Name        string `json:"name"`
@@ -56,24 +46,11 @@ type metadata struct {
 	Form       map[string][]string       `json:"form"`
 }
 
-var remoteAddresses = make(map[string]struct{})
-var empty struct{}
-var remoteAddressesWriteMutex = sync.RWMutex{}
-var requestsStats = stats{}
-
 // Home returns the payload as response.
 func Home(ctx *gin.Context) {
-	now := time.Now().UnixMilli()
-	atomic.CompareAndSwapInt64(&requestsStats.EarliestEpochMs, 0, now)
-	atomic.AddUint64(&requestsStats.RequestsCount, 1)
-	requestsStats.LatestEpochMs = now
-	// Records the remote address as a unique connection.
-	remoteAddressesWriteMutex.Lock()
-	remoteAddresses[ctx.Request.RemoteAddr] = empty
-	remoteAddressesWriteMutex.Unlock()
-
+	nowMs := time.Now().UnixMilli()
 	message, err := ctx.GetRawData()
-	atomic.AddUint64(&requestsStats.ReceivedBytes, uint64(len(message)))
+	current.Load().record(ctx.Request.Context(), nowMs, len(message))
 
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -84,20 +61,14 @@ func Home(ctx *gin.Context) {
 
 // RequestsStats returns the statistics of requests.
 func RequestsStats(ctx *gin.Context) {
-	requestsStats.ClientsCount = len(remoteAddresses)
-	if requestsStats.LatestEpochMs > 0 {
-		requestsStats.DurationMs = uint64(requestsStats.LatestEpochMs - requestsStats.EarliestEpochMs)
-		requestsDuration := max(1, requestsStats.DurationMs/1000)
-		requestsStats.CountPerSeconds = requestsStats.RequestsCount / requestsDuration
-	}
-	ctx.JSON(http.StatusOK, requestsStats)
+	ctx.JSON(http.StatusOK, current.Load().snapshot())
 }
 
 // ResetStats resets the statistics of requests.
 func ResetStats(ctx *gin.Context) {
-	requestsStats = stats{}
-	remoteAddresses = make(map[string]struct{})
-	ctx.JSON(http.StatusOK, requestsStats)
+	fresh := &counters{}
+	current.Store(fresh)
+	ctx.JSON(http.StatusOK, fresh.snapshot())
 }
 
 // Describe the received requests.
@@ -145,17 +116,7 @@ func Describe(ctx *gin.Context) {
 			requestMetadata.Files[fileFieldName] = metadata
 		}
 	} else {
-		var data []byte
-		buf := make([]byte, 1024)
-		res := -1
-		for {
-			res, _ = request.Body.Read(buf)
-			data = append(data, buf[0:res]...)
-			if res == 0 {
-				break
-			}
-		}
-
+		data, _ := io.ReadAll(request.Body)
 		requestMetadata.Data = string(data)
 	}
 

@@ -12,42 +12,37 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-# Builder: go-builder
-ARG GO_VERSION=1.21
-FROM --platform=${TARGETPLATFORM:-linux/amd64} golang:${GO_VERSION} as go-builder
+# The builder runs natively on the build platform and cross-compiles for the target platform.
+ARG GO_VERSION=1.27.4
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION} AS go-builder
 
-ENV GOPROXY=https://proxy.golang.org
+ARG TARGETOS
+ARG TARGETARCH
+ARG TARGETVARIANT
+# Defaults to the content of the file VERSION when not provided.
+ARG VERSION=""
 
-WORKDIR /app/
-ADD . .
-RUN go get -v -t -d ./...
-RUN GO_ENABLED=0 go build -ldflags="-w -s" -o /bin -v ./...
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
-# Final image
-FROM --platform=${TARGETPLATFORM:-linux/amd64} debian
+COPY . .
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    VERSION="${VERSION:-$(cat VERSION)}" && \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH GOARM=${TARGETVARIANT#v} \
+    go build -trimpath -ldflags="-w -s -X main.version=${VERSION}" -o /out/http-punching-ball .
 
-RUN apt -y update && apt -y upgrade && \
-    apt install -y net-tools bash
-
-ENV TINI_VERSION v0.19.0
-ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /usr/local/bin/tini
-RUN chmod +x /usr/local/bin/tini
+# Final image: static binary on distroless, running as non-root.
+FROM gcr.io/distroless/static-debian13:nonroot
 
 WORKDIR /http-punching-ball
-COPY --from=go-builder /bin/http-punching-ball /http-punching-ball/http-punching-ball
-ADD http-server.* .
+COPY --from=go-builder /out/http-punching-ball /http-punching-ball/http-punching-ball
+COPY http-server.crt http-server.key /http-punching-ball/
 
-RUN useradd -ms /bin/bash http-punching-ball
-RUN chown -R http-punching-ball:root /http-punching-ball && \
-    chmod -R 770 /http-punching-ball
-
-COPY entrypoint.sh /usr/local/bin
-RUN chmod +x /usr/local/bin/entrypoint.sh
-
-HEALTHCHECK --start-period=2s --interval=5s --timeout=2s --retries=5 CMD ["nc", "-z", "localhost", "8080"]
-ENTRYPOINT ["/usr/local/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
+HEALTHCHECK --start-period=2s --interval=5s --timeout=2s --retries=5 CMD ["/http-punching-ball/http-punching-ball", "health"]
+ENTRYPOINT ["/http-punching-ball/http-punching-ball"]
 
 EXPOSE 8080
-EXPOSE 8433
+EXPOSE 8443
 
-USER http-punching-ball
+USER nonroot:nonroot
