@@ -68,8 +68,23 @@ docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 \
 The version is read from the file `VERSION`, unless provided with `--build-arg VERSION=...`.
 
 The CI (`.github/workflows/build.yml`) runs the tests, cross-compiles the binaries for Linux, macOS and Windows
-(amd64 and arm64), and on each push to `main` publishes the multi-architecture image with the tags `latest` and
-the version.
+(amd64 and arm64) and Linux ARMv7, and on each push to `main` publishes the multi-architecture image with the tags
+`latest` and the version.
+
+A tag `v<version>` matching the file `VERSION` publishes the binaries as assets of a GitHub release, with their
+`SHA256SUMS`. Running the workflow manually (`workflow_dispatch`) on `main` does the same for the current version,
+creating the tag when it does not exist.
+
+## Download a binary
+
+The binaries of each release are on the [releases page](https://github.com/aeris-consulting/http-punching-ball/releases),
+named `http-punching-ball-<os>-<arch>-<version>` (`.exe` on Windows):
+
+```
+VERSION=1.1.0
+curl -fLO "https://github.com/aeris-consulting/http-punching-ball/releases/download/v${VERSION}/http-punching-ball-darwin-arm64-${VERSION}"
+chmod +x "http-punching-ball-darwin-arm64-${VERSION}"
+```
 
 ## Use from Docker
 

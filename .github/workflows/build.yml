@@ -4,7 +4,11 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "v*"
   pull_request:
+  # Publishes the release of the version in the file VERSION, e.g. for a tag pushed before this workflow existed.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -34,6 +38,11 @@ jobs:
       matrix:
         goos: [ linux, darwin, windows ]
         goarch: [ amd64, arm64 ]
+        include:
+          # 32-bit ARM (e.g. Raspberry Pi), like the Docker image.
+          - goos: linux
+            goarch: arm
+            goarm: "7"
     steps:
       - uses: actions/checkout@v7
 
@@ -46,9 +55,10 @@ jobs:
           CGO_ENABLED: "0"
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
         run: |
           VERSION=$(cat VERSION)
-          NAME="http-punching-ball-${GOOS}-${GOARCH}-${VERSION}"
+          NAME="http-punching-ball-${GOOS}-${GOARCH}${GOARM:+v$GOARM}-${VERSION}"
           EXT=""
           if [ "$GOOS" = "windows" ]; then EXT=".exe"; fi
           go build -trimpath -ldflags="-w -s -X main.version=${VERSION}" -o "dist/${NAME}${EXT}" .
@@ -58,6 +68,44 @@ jobs:
         with:
           name: ${{ env.ARTIFACT }}
           path: dist/*
+
+  release:
+    needs: binaries
+    # A tag v<version> or a manual dispatch publishes the binaries of all the architectures as assets of a GitHub release.
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check the version
+        run: |
+          TAG="v$(cat VERSION)"
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "$TAG" ]; then
+            echo "::error::The tag $GITHUB_REF_NAME does not match the file VERSION ($TAG)"
+            exit 1
+          fi
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: http-punching-ball-*
+          path: dist
+          merge-multiple: true
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          sha256sum http-punching-ball-* > SHA256SUMS
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" http-punching-ball-* SHA256SUMS --clobber
+          else
+            gh release create "$TAG" http-punching-ball-* SHA256SUMS --target "$GITHUB_SHA" --title "$TAG" --generate-notes
+          fi
 
   docker:
     needs: test
